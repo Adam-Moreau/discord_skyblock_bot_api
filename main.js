@@ -3,63 +3,83 @@ const axios = require('axios');
 require('dotenv').config();
 
 const discordBotToken = process.env.DISCORD_BOT_TOKEN;
-const skyblockApiKey = process.env.SKYBLOCK_API_KEY;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
-const auth_key = skyblockApiKey;
-let allAuctions = []; // Initialize an empty array to store auction data
+let alerts = []; // Store user alerts in this array
+const alertedItems = {}; // Store alerted item IDs and their prices
 
-const itemsPerPage = 10; // Number of items to display per page
-const matchingItems = []; // Collect matching items here
-
-client.once('ready', async () => {
+client.once('ready', () => {
     console.log('Bot is ready');
     console.log('Bot is currently in these guilds:');
     client.guilds.cache.forEach((guild) => {
         console.log(`- ${guild.name} (ID: ${guild.id})`);
-        console.log('Channels:');
-        guild.channels.cache.forEach((channel) => {
-            console.log(` - ${channel.name} (ID: ${channel.id})`);
-        });
     });
+    console.log(`Total alerts loaded: ${alerts.length}`);
 
-    // Call fetchAllAuctions when the bot is ready to fetch the data
-    allAuctions = await fetchAllAuctions();
-    console.log(`Fetched ${allAuctions.length} auctions.`);
+    // Periodically fetch auctions for alerts (every 5 seconds)
+    setInterval(fetchAuctionsForAlerts, 5000);
 });
 
-// Function to fetch all pages of auctions
-async function fetchAllAuctions() {
-    let page = 0;
-    const allAuctions = [];
+// Function to add an alert
+function addAlert(userId, itemName, price, rarity) {
+    alerts.push({ userId, itemName, price, rarity });
+}
 
-    while (true) {
-        try {
-            const response = await axios.get(`https://api.hypixel.net/skyblock/auctions?page=${page}`);
+// Function to fetch auctions based on user alerts
+async function fetchAuctionsForAlerts() {
+    try {
+        const response = await axios.get('https://api.hypixel.net/skyblock/auctions');
+        if (response.data.success) {
+            const auctions = response.data.auctions;
 
-            if (response.data.success) {
-                // Process the auctions data from the response
-                const auctions = response.data.auctions;
-                allAuctions.push(...auctions);
+            // Loop through user alerts and find matching auctions
+            for (const alert of alerts) {
+                const { userId, itemName, price, rarity } = alert;
+                const matchingItems = auctions.filter((item) => {
+                    const itemMatches = item.bin && item.item_name.toLowerCase().includes(itemName);
+                    if (rarity) {
+                        return itemMatches && item.tier.includes(rarity) && item.starting_bid <= price;
+                    } else {
+                        return itemMatches && item.starting_bid <= price;
+                    }
+                });
 
-                // Check if there are more pages to fetch
-                if (page >= response.data.totalPages - 1) {
-                    break;
+                for (const item of matchingItems) {
+                    const itemId = item.uuid;
+                    const currentPrice = item.starting_bid;
+
+                    // Check if the item has been alerted before
+                    if (alertedItems[itemId]) {
+                        const alertedPrice = alertedItems[itemId];
+
+                        // If the price has changed, send an updated alert
+                        if (currentPrice !== alertedPrice) {
+                            alertedItems[itemId] = currentPrice;
+
+                            const user = await client.users.fetch(userId);
+                            if (user) {
+                                console.log(`Alert for user ${userId}: Updated price for "${itemName}" - Rarity: ${item.tier}, New Price: ${currentPrice} coins`);
+                                user.send(`Alert: Updated price for "${itemName}" - Rarity: ${item.tier}, New Price: ${currentPrice} coins`);
+                            }
+                        }
+                    } else {
+                        // If it's a new item, send the alert and store its price
+                        alertedItems[itemId] = currentPrice;
+
+                        const user = await client.users.fetch(userId);
+                        if (user) {
+                            console.log(`Alert for user ${userId}: Matching item found for "${itemName}" - Rarity: ${item.tier}, Price: ${currentPrice} coins`);
+                            user.send(`Alert: Matching item found for "${itemName}" - Rarity: ${item.tier}, Price: ${currentPrice} coins`);
+                        }
+                    }
                 }
-            } else {
-                console.error('Failed to fetch data from the API:', response.data.cause);
-                break; // Stop fetching if there's an error
             }
-
-            // Increment the page number for the next request
-            page++;
-        } catch (error) {
-            console.error('Error fetching data from the API:', error.message);
-            break; // Stop fetching if there's an error
+        } else {
+            console.error('Failed to fetch data from the API:', response.data.cause);
         }
+    } catch (error) {
+        console.error('Error fetching data from the API:', error.message);
     }
-
-    return allAuctions;
 }
 
 // Register the /alert command
@@ -126,7 +146,6 @@ client.on('ready', async () => {
                             },
                         ],
                     },
-
                 ],
             },
         ]);
@@ -136,62 +155,26 @@ client.on('ready', async () => {
     }
 });
 
-// ...
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options } = interaction;
 
     if (commandName === 'alert') {
+        const userId = interaction.user.id;
         const alertPrice = options.getInteger('price');
+        const inputItemName = options.getString('item').toLowerCase(); // Convert input item name to lowercase
+        const alertRarity = options.getString('rarity');
 
         if (alertPrice !== null) {
-            try {
-                if (allAuctions.length > 0) {
-                    // Filter auctions where bin is true and rarity matches if provided
-                    const matchingItems = allAuctions.filter((item) => {
-                        const itemMatches = item.bin && item.item_name.includes(options.getString('item'));
-                        if (options.getString('rarity')) {
-                            return itemMatches && item.tier.includes(options.getString('rarity'));
-                        } else {
-                            return itemMatches;
-                        }
-                    });
+            // Store the alert
+            addAlert(userId, inputItemName, alertPrice, alertRarity);
 
-                    if (matchingItems.length > 0) {
-                        // Find the item with the lowest starting bid among the matching items
-                        const cheapestItem = matchingItems.reduce((prev, current) => {
-                            return prev.starting_bid < current.starting_bid ? prev : current;
-                        });
-
-                        const itemInfo = `Item : ${cheapestItem.item_name}, Rarity : ${cheapestItem.tier}, Price : ${cheapestItem.starting_bid} coins`;
-
-                        interaction.reply(itemInfo);
-                    } else {
-                        // If no items match, find the item with the closest matching price
-                        const closestItem = allAuctions.reduce((prev, current) => {
-                            const prevDiff = Math.abs(prev.starting_bid - alertPrice);
-                            const currentDiff = Math.abs(current.starting_bid - alertPrice);
-                            return prevDiff < currentDiff ? prev : current;
-                        });
-
-                        const itemInfo = `No items found under $${alertPrice}. Closest item: Item : ${closestItem.item_name}, Rarity : ${closestItem.tier}, Price : ${closestItem.starting_bid} coins`;
-
-                        interaction.reply(itemInfo);
-                    }
-                } else {
-                    interaction.reply('No auctions data available.');
-                }
-            } catch (error) {
-                console.error('Error fetching data from the API:', error.message);
-                interaction.reply('An error occurred while fetching data from the Hypixel Skyblock API.');
-            }
+            interaction.reply('Alert set successfully.');
         } else {
             interaction.reply('Please provide a valid price.');
         }
     }
 });
-// ...
-
 
 client.login(discordBotToken);
