@@ -126,7 +126,7 @@ client.on('ready', async () => {
                             },
                         ],
                     },
-                    
+
                 ],
             },
         ]);
@@ -147,8 +147,15 @@ client.on('interactionCreate', async (interaction) => {
         if (alertPrice !== null) {
             try {
                 if (allAuctions.length > 0) {
-                    // Filter auctions where bin is true and price is under the set price
-                    const matchingItems = allAuctions.filter((item) => item.bin && item.item_name.includes(options.getString('item')) && item.starting_bid <= alertPrice && item.tier.includes(options.getString('rarity')));
+                    // Filter auctions where bin is true, price is under the set price, and rarity matches if provided
+                    const matchingItems = allAuctions.filter((item) => {
+                        const itemMatches = item.bin && item.item_name.includes(options.getString('item')) && item.starting_bid <= alertPrice;
+                        if (options.getString('rarity')) {
+                            return itemMatches && item.tier.includes(options.getString('rarity'));
+                        } else {
+                            return itemMatches;
+                        }
+                    });
 
                     if (matchingItems.length > 0) {
                         let currentPage = 1;
