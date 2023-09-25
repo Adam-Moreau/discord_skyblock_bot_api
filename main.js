@@ -136,6 +136,7 @@ client.on('ready', async () => {
     }
 });
 
+// ...
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
 
@@ -147,9 +148,9 @@ client.on('interactionCreate', async (interaction) => {
         if (alertPrice !== null) {
             try {
                 if (allAuctions.length > 0) {
-                    // Filter auctions where bin is true, price is under the set price, and rarity matches if provided
+                    // Filter auctions where bin is true and rarity matches if provided
                     const matchingItems = allAuctions.filter((item) => {
-                        const itemMatches = item.bin && item.item_name.includes(options.getString('item')) && item.starting_bid <= alertPrice;
+                        const itemMatches = item.bin && item.item_name.includes(options.getString('item'));
                         if (options.getString('rarity')) {
                             return itemMatches && item.tier.includes(options.getString('rarity'));
                         } else {
@@ -158,50 +159,25 @@ client.on('interactionCreate', async (interaction) => {
                     });
 
                     if (matchingItems.length > 0) {
-                        let currentPage = 1;
-                        const totalItems = matchingItems.length;
-                        const totalPages = Math.ceil(totalItems / itemsPerPage);
-
-                        const sendPage = async (page) => {
-                            const startIdx = (page - 1) * itemsPerPage;
-                            const endIdx = startIdx + itemsPerPage;
-
-                            const pageItems = matchingItems.slice(startIdx, endIdx);
-
-                            const pageContent = pageItems.map((item) => `Item : ${item.item_name}, Rarity : ${item.tier}, Price : ${item.starting_bid} coins`).join('\n');
-
-                            await interaction.reply(`Page ${page} of ${totalPages}\n${pageContent}`).then((msg) => {
-                                setTimeout(() => {
-                                    msg.delete();
-                                }, 600000); // Delete the message after 10 minutes
-                            });
-                        };
-
-                        sendPage(currentPage);
-
-                        const filter = (response) => {
-                            return (
-                                (response.customId === 'prev' || response.customId === 'next') &&
-                                response.user.id === interaction.user.id
-                            );
-                        };
-
-                        const collector = interaction.channel.createMessageComponentCollector({
-                            filter,
-                            time: 600000, // 10 minutes
+                        // Find the item with the lowest starting bid among the matching items
+                        const cheapestItem = matchingItems.reduce((prev, current) => {
+                            return prev.starting_bid < current.starting_bid ? prev : current;
                         });
 
-                        collector.on('collect', async (response) => {
-                            if (response.customId === 'prev' && currentPage > 1) {
-                                currentPage--;
-                            } else if (response.customId === 'next' && currentPage < totalPages) {
-                                currentPage++;
-                            }
+                        const itemInfo = `Item : ${cheapestItem.item_name}, Rarity : ${cheapestItem.tier}, Price : ${cheapestItem.starting_bid} coins`;
 
-                            await sendPage(currentPage);
-                        });
+                        interaction.reply(itemInfo);
                     } else {
-                        interaction.reply(`No items found under $${alertPrice}.`);
+                        // If no items match, find the item with the closest matching price
+                        const closestItem = allAuctions.reduce((prev, current) => {
+                            const prevDiff = Math.abs(prev.starting_bid - alertPrice);
+                            const currentDiff = Math.abs(current.starting_bid - alertPrice);
+                            return prevDiff < currentDiff ? prev : current;
+                        });
+
+                        const itemInfo = `No items found under $${alertPrice}. Closest item: Item : ${closestItem.item_name}, Rarity : ${closestItem.tier}, Price : ${closestItem.starting_bid} coins`;
+
+                        interaction.reply(itemInfo);
                     }
                 } else {
                     interaction.reply('No auctions data available.');
@@ -215,5 +191,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 });
+// ...
+
 
 client.login(discordBotToken);
