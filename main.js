@@ -77,18 +77,56 @@ client.on('ready', async () => {
                         required: true,
                     },
                     {
-                        name: 'rarity',
-                        description: 'rarity of the item',
-                        type: 3,
-                        required: false,
-
-                    },
-                    {
                         name: 'price',
                         description: 'Price limit for the item.',
                         type: 4, // Integer type
                         required: true,
                     },
+                    {
+                        name: 'rarity',
+                        description: 'Rarity of the item',
+                        type: 3, // String type
+                        required: false,
+                        choices: [
+                            {
+                                name: 'Common',
+                                value: 'COMMON', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Uncommon',
+                                value: 'UNCOMMON', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Rare',
+                                value: 'RARE', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Epic',
+                                value: 'EPIC', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Legendary',
+                                value: 'LEGENDARY', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Mythic',
+                                value: 'MYTHIC', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Divine',
+                                value: 'DIVINE', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Special',
+                                value: 'SPECIAL', // Use uppercase to match your item data
+                            },
+                            {
+                                name: 'Very Special',
+                                value: 'VERY_SPECIAL', // Use uppercase to match your item data
+                            },
+                        ],
+                    },
+                    
                 ],
             },
         ]);
@@ -110,7 +148,7 @@ client.on('interactionCreate', async (interaction) => {
             try {
                 if (allAuctions.length > 0) {
                     // Filter auctions where bin is true and price is under the set price
-                    const matchingItems = allAuctions.filter((item) => item.bin && item.item_name.includes(options.getString('item')) && item.starting_bid <= alertPrice);
+                    const matchingItems = allAuctions.filter((item) => item.bin && item.item_name.includes(options.getString('item')) && item.starting_bid <= alertPrice && item.tier.includes(options.getString('rarity')));
 
                     if (matchingItems.length > 0) {
                         let currentPage = 1;
@@ -123,7 +161,7 @@ client.on('interactionCreate', async (interaction) => {
 
                             const pageItems = matchingItems.slice(startIdx, endIdx);
 
-                            const pageContent = pageItems.map((item) => `Item: "${item.item_name}", Starting Bid: $${item.starting_bid}`).join('\n');
+                            const pageContent = pageItems.map((item) => `Item : ${item.item_name}, Rarity : ${item.tier}, Price : ${item.starting_bid} coins`).join('\n');
 
                             await interaction.reply(`Page ${page} of ${totalPages}\n${pageContent}`).then((msg) => {
                                 setTimeout(() => {
